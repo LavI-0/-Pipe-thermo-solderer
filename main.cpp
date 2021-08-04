@@ -53,7 +53,7 @@ uint16_t maxTemperature=0;
 
 #define GRAFMODE 1
 #define TEXTMODE 2
-uint8_t dispMode = GRAFMODE; //TEXTMODE ;
+uint8_t dispMode = TEXTMODE ;
 uint16_t data[GRAPHWIDTH];
 //Prototypes
 void graph (uint16_t* arrDot120, uint16_t maxTemperInInterval, uint8_t xStart, uint8_t yStart, uint8_t graphHeight); //120 dots in arrey// arrDot60 - arrey of 60 numbers; gradsInOneDot - scale of Y-axis; xStart - x coordinate of left bottom graph; yStart - y coordinate of left bottom graph;
@@ -143,18 +143,12 @@ void m_s10i1EnterFunc(void){			//"Збільшити");
       break;   
     case KP: 
       myPID.SetTunings(myPID.GetKp()+0.1, myPID.GetKi(), myPID.GetKd());// Kp+=0.1;
-      Serial.print("myPID.GetKp()=");
-      Serial.println(myPID.GetKp());
       break;   
     case KD: 
       myPID.SetTunings(myPID.GetKp(), myPID.GetKi(), myPID.GetKd()+0.1);// Kd+=0.1;
-      Serial.print("myPID.GetKd()=");
-      Serial.println(myPID.GetKd());
       break; 
     case KI: 
       myPID.SetTunings(myPID.GetKp(), myPID.GetKi()+0.1, myPID.GetKd()); // Ki+=0.1;
-      Serial.print("myPID.GetKi()=");
-      Serial.println(myPID.GetKi());
     default: 
       break;
   }
@@ -233,7 +227,7 @@ MENU_ITEM(m_s10i2, m_s10i1,   m_s10i1,     m_s1i2,     NULL_MENU,     NULL, 		  
 static void Generic_Write(const char* menuText) { // Generic function to write the text of a menu.
   char buf[40]={}; 
   char str_temp[5]={};
-  Serial.println("Generic_Write()"); 
+  int doubleToInt=0;
 
   u8g2->firstPage(); //C++
   // u8g2_firstPage(&u8g2); //C
@@ -281,13 +275,16 @@ static void Generic_Write(const char* menuText) { // Generic function to write t
         sprintf(str_temp, "%02d", pipeDelay[d32]);
         break;   
       case KP: 
-        sprintf(str_temp, "%4.1f", (float)myPID.GetKp());
+        doubleToInt=(int)(myPID.GetKp()*10);
+        sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
         break;   
       case KD: 
-        sprintf(str_temp, "%4.1f", (float)myPID.GetKd());
+        doubleToInt=(int)(myPID.GetKd()*10);
+        sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
         break; 
       case KI: 
-        sprintf(str_temp, "%4.1f", (double)myPID.GetKi());
+        doubleToInt=(int)(myPID.GetKi()*10);
+        sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
         break;
       case cur_temp: 
         sprintf(str_temp, "%03d", currentTemperature); 
@@ -295,8 +292,8 @@ static void Generic_Write(const char* menuText) { // Generic function to write t
       default: 
         break;
       }
-      // u8g2->setFont(u8g2_font_fub42_tn);	// 42 pixel // C++
-      u8g2->setFont(u8g2_font_fub11_tf);	
+      u8g2->setFont(u8g2_font_fub42_tn);	// 42 pixel // C++
+      // u8g2->setFont(u8g2_font_fub11_tf);	
       // u8g2_setFont(&u8g2, u8g2_font_fub42_tf);	// 42 pixel // C
       u8g2->drawStr(10,63, str_temp);	// write something to the internal memory// C++
       // u8g2_drawStr(&u8g2, 10,63, str_temp);	// write something to the internal memory// C
