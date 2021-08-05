@@ -42,8 +42,12 @@ uint8_t pipeDelay[]={5, 7, 8};
 uint8_t currentPipeDiametr = d20;
 int16_t currentTemperature=0;
 uint8_t parametrToChange;
+bool calibration=false;
 
 uint16_t maxTemperature=0;
+
+#define STOP false
+#define START true
 //################################ GPIO ###############################################
 #define PIN_REDLED 12    //PB4  pin for arduino mini 
 #define PIN_GREENLED 7   //PD7 pin for arduino mini 
@@ -92,6 +96,10 @@ void m_s2i3EnterFunc(void){	    //"32 мм");
 // підменю "Налаштування режимів"
 // підменю "Налаштування коеф"
 void m_s4i2EnterFunc(void){		//"Автопідбір");
+  calibration=START;
+  myPID.SetMode(MANUAL);
+  SYMYSTOR_OFF;
+  BEEP_OFF;  
   // Setpoint=200;
   
   
@@ -206,13 +214,13 @@ void m_s10i2EnterFunc(void){			//"Зменшити");
 
 // const struct Menu_Item PROGMEM m_s1i1 = {&m_s1i2, &NULL_MENU, &NULL_MENU, &m_s2i1, __null, __null, const char Text[]}
 //                 NEXT,      PREVIOUS     PARENT,     CHILD		     SELECTFUNC			ENTERFUNC		      TEXT
-MENU_ITEM(m_s1i1,  m_s1i2,    m_s1i5,      NULL_MENU,   m_s2i1,       NULL, 		    NULL,		         "Вибрати трубу");//
-MENU_ITEM(m_s1i2,  m_s1i3,    m_s1i1,      NULL_MENU,   m_s3i1,       NULL, 		    NULL,		         "Налаштувати режим"); // 
-MENU_ITEM(m_s1i3,  m_s1i4,	  m_s1i2,      NULL_MENU,   m_s4i1,   	  NULL,		    	NULL,		         "Налаштувати коеф");
-MENU_ITEM(m_s1i4,  m_s1i5,    m_s1i3,      NULL_MENU,   m_s5i1,       NULL,		    	NULL,            "Вивести на дисплей");
-MENU_ITEM(m_s1i5,  m_s1i1,    m_s1i4,      NULL_MENU,   NULL_MENU,    NULL,		    	m_s1i5EnterFunc, "-------START-------");
+MENU_ITEM(m_s1i1,  m_s1i2,    m_s1i5,      NULL_MENU,  m_s2i1,       NULL, 		      NULL,		         "Вибрати трубу");//
+MENU_ITEM(m_s1i2,  m_s1i3,    m_s1i1,      NULL_MENU,  m_s3i1,       NULL, 		      NULL,		         "Налаштувати режим"); // 
+MENU_ITEM(m_s1i3,  m_s1i4,	  m_s1i2,      NULL_MENU,  m_s4i1,   	   NULL,		    	NULL,		         "Налаштувати PID");
+MENU_ITEM(m_s1i4,  m_s1i5,    m_s1i3,      NULL_MENU,  m_s5i1,       NULL,		    	NULL,            "Вивести на дисплей");
+MENU_ITEM(m_s1i5,  m_s1i1,    m_s1i4,      NULL_MENU,  m_s1i5s,      NULL,		    	m_s1i5EnterFunc, "-------START-------");
 // підменю "STOP"
-MENU_ITEM(m_s1i5s, NULL_MENU, NULL_MENU,   m_s1i5,      NULL_MENU,    NULL,		    	m_s1i5sEnterFunc, "-------STOP-------");
+MENU_ITEM(m_s1i5s, NULL_MENU, NULL_MENU,   NULL_MENU,  NULL_MENU,    NULL,		    	m_s1i5sEnterFunc, "-------STOP-------");
 // підменю "Вибір труби"
 MENU_ITEM(m_s2i1,  m_s2i2,    m_s2i3,      m_s1i1,     NULL_MENU,     NULL, 		    m_s2i1EnterFunc,  "20 мм");
 MENU_ITEM(m_s2i2,  m_s2i3,    m_s2i1,      m_s1i1,     NULL_MENU,     NULL, 		    m_s2i2EnterFunc,  "25 мм");
@@ -246,22 +254,21 @@ MENU_ITEM(m_s10i2, m_s10i1,   m_s10i1,     m_s1i2,     NULL_MENU,     NULL, 		  
 
 void m_s1i5EnterFunc(void){			//"START");
   myPID.SetMode(AUTOMATIC); 
-  dispMode = TEXTMODE;
+  // dispMode = TEXTMODE;
   Menu_Navigate(&m_s1i5s);
   parametrToChange=cur_temp;
 }
-
 void m_s1i5sEnterFunc(void){			//"STOP");
   myPID.SetMode(MANUAL);
   SYMYSTOR_OFF;
   BEEP_OFF;
-  dispMode = TEXTMODE; 
+  // dispMode = TEXTMODE; 
   parametrToChange=cur_temp;   
   Menu_Navigate(&m_s1i5); 
 }
 
 static void Generic_Write(const char* menuText) { // Generic function to write the text of a menu.
-  char buf[40]={}; 
+  char buf[40]={};  // two bytes for each UTF8 char
   char str_temp[5]={};
   int doubleToInt=0;
 
@@ -279,69 +286,83 @@ static void Generic_Write(const char* menuText) { // Generic function to write t
     u8g2->drawUTF8(0, 7, buf); //C++
     // u8g2_drawUTF8(&u8g2, 0, 7, buf); //C
     
-    // if ((void*)tempMenu != (void*)&NULL_ENTRY) 
     if (MENU_NEXT != &NULL_MENU) 
 	  {
       sprintf_P(buf, PSTR(" %-18S"), ((Menu_Item_t*)MENU_NEXT)->Text);
       u8g2->drawUTF8(0, 15, buf);//C++	
       // u8g2_drawUTF8(&u8g2, 0, 15, buf);//C
     }
-    
-    if (dispMode==GRAFMODE){ // show ghaph
-      graph (data, maxTemperature, 5, dispHigh-1, 45);
-    }
-    else if (dispMode==TEXTMODE){ // show diametr and temperature
-      switch (parametrToChange){
-      case d20Temp: 
-        sprintf(str_temp, "%02d", pipeTemperature[d20]);
-        break;
-      case d20Time: 
-        sprintf(str_temp, "%02d", pipeDelay[d20]);
-        break;
-      case d25Temp: 
-        sprintf(str_temp, "%02d", pipeTemperature[d25]);
-        break;
-      case d25Time: 
-        sprintf(str_temp, "%02d", pipeDelay[d25]);
-        break;
-      case d32Temp: 
-        sprintf(str_temp, "%02d", pipeTemperature[d32]);
-        break;
-      case d32Time: 
-        sprintf(str_temp, "%02d", pipeDelay[d32]);
-        break;   
-      case KP: 
-        doubleToInt=(int)(myPID.GetKp()*10);
-        sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
-        break;   
-      case KD: 
-        doubleToInt=(int)(myPID.GetKd()*10);
-        sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
-        break; 
-      case KI: 
-        doubleToInt=(int)(myPID.GetKi()*10);
-        sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
-        break;
-      case cur_temp: 
-        sprintf(str_temp, "%03d", currentTemperature); 
-        break; 
-      case d20mm: 
-        sprintf(str_temp, "20");
-        break;   
-      case d25mm: 
-        sprintf(str_temp, "25");
-        break; 
-      case d32mm: 
-        sprintf(str_temp, "32");
-        break;              
-      default: 
-        break;
+    if (calibration!=START){ // if NOT start auto calibration of PID show usual viewer  
+      if (dispMode==GRAFMODE){ // show ghaph
+        graph (data, maxTemperature, 5, dispHigh-1, 45);
       }
-      u8g2->setFont(u8g2_font_fub42_tn);	// 42 pixel // C++
-      // u8g2->setFont(u8g2_font_fub11_tf);	
-      // u8g2_setFont(&u8g2, u8g2_font_fub42_tf);	// 42 pixel // C
-      u8g2->drawStr(10,63, str_temp);	// write something to the internal memory// C++
-      // u8g2_drawStr(&u8g2, 10,63, str_temp);	// write something to the internal memory// C
+      else if (dispMode==TEXTMODE){ // show diametr and temperature
+        switch (parametrToChange){
+        case d20Temp: 
+          sprintf(str_temp, "%02d", pipeTemperature[d20]);
+          break;
+        case d20Time: 
+          sprintf(str_temp, "%02d", pipeDelay[d20]);
+          break;
+        case d25Temp: 
+          sprintf(str_temp, "%02d", pipeTemperature[d25]);
+          break;
+        case d25Time: 
+          sprintf(str_temp, "%02d", pipeDelay[d25]);
+          break;
+        case d32Temp: 
+          sprintf(str_temp, "%02d", pipeTemperature[d32]);
+          break;
+        case d32Time: 
+          sprintf(str_temp, "%02d", pipeDelay[d32]);
+          break;   
+        case KP: 
+          doubleToInt=(int)(myPID.GetKp()*10);
+          sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
+          break;   
+        case KD: 
+          doubleToInt=(int)(myPID.GetKd()*10);
+          sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
+          break; 
+        case KI: 
+          doubleToInt=(int)(myPID.GetKi()*10);
+          sprintf(str_temp, "%2d.%1d", doubleToInt/10, doubleToInt%10);
+          break;
+        case cur_temp: 
+          sprintf(str_temp, "%03d", currentTemperature); 
+          break; 
+        case d20mm: 
+          sprintf(str_temp, "20");
+          break;   
+        case d25mm: 
+          sprintf(str_temp, "25");
+          break; 
+        case d32mm: 
+          sprintf(str_temp, "32");
+          break;              
+        default: 
+          break;
+        }
+        u8g2->setFont(u8g2_font_fub42_tn);	// 42 pixel // C++
+        // u8g2->setFont(u8g2_font_fub11_tf);	
+        // u8g2_setFont(&u8g2, u8g2_font_fub42_tf);	// 42 pixel // C
+        u8g2->drawStr(10,63, str_temp);	// write something to the internal memory// C++
+        // u8g2_drawStr(&u8g2, 10,63, str_temp);	// write something to the internal memory// C
+      }
+    }
+    else {  // if user start auto calibration of PID  
+      sprintf(buf, "      УВАГА!      ");
+      u8g2->drawUTF8(0, 25, buf);    
+      sprintf(buf, "Oчікуйте завершення");
+      u8g2->drawUTF8(0, 34, buf);
+      sprintf(buf, "  Це може зайняти  ");
+      u8g2->drawUTF8(0,43, buf);
+      sprintf(buf, "      до 10 хв     ");
+      u8g2->drawUTF8(0,52, buf);   
+      sprintf(buf, "Не робіть нічого!!!");
+      u8g2->drawUTF8(0, 61, buf);
+
+
     } 
   } while (u8g2->nextPage());// C++
   // } while (u8g2_nextPage(&u8g2));// C
@@ -440,9 +461,9 @@ void setup() {
 }
 
 void loop() {
-  char str_temp[40];//str_temp[6];
-  static uint8_t min;
-  static uint8_t sec;
+  // char str_temp[40];
+  // static uint8_t min;
+  // static uint8_t sec;
   static uint32_t previousTime1s=0, previousTime20ms=0, previousTime50ms=0, previousTime100ms=0;
   static unsigned char endDataPoint=0; // last save temperature into array data[]
 
@@ -454,35 +475,35 @@ void loop() {
 
     if (myPID.GetMode()==AUTOMATIC){ // if work started
       count++;       
-      if (count==19){ // start beep 0.5 s
+      if (count==19U){ // start beep 0.5 s
         BEEP_ON;
         return;
       }
-      if (count==25){ // stop beep 0.5 s
+      if (count==25U){ // stop beep 0.5 s
         BEEP_OFF;
         return;
       } 
-      if (count==25+pipeDelay[currentPipeDiametr]*10){
+      if (count==25U+pipeDelay[currentPipeDiametr]*10U){
         BEEP_ON;
         return;           
       }
-      if (count==25+pipeDelay[currentPipeDiametr]*10+1){
+      if (count==25U+pipeDelay[currentPipeDiametr]*10U+1U){
         BEEP_OFF;
         return;           
       } 
-      if (count==25+pipeDelay[currentPipeDiametr]*10+2){
+      if (count==25U+pipeDelay[currentPipeDiametr]*10U+2U){
         BEEP_ON;
         return;           
       }
-      if (count==25+pipeDelay[currentPipeDiametr]*10+3){
+      if (count==25U+pipeDelay[currentPipeDiametr]*10U+3U){
         BEEP_OFF;
         return;           
       } 
-      if (count==25+pipeDelay[currentPipeDiametr]*10+4){
+      if (count==25U+pipeDelay[currentPipeDiametr]*10U+4U){
         BEEP_ON;
         return;           
       }
-      if (count==25+pipeDelay[currentPipeDiametr]*10+5){
+      if (count==25U+pipeDelay[currentPipeDiametr]*10U+5U){
         BEEP_OFF;
         count=0; // stop working cycle
         return;           
