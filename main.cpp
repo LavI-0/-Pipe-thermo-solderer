@@ -24,7 +24,10 @@ enum PARAMETR {
   KP,
   KI,
   KD,
-  cur_temp
+  cur_temp,
+  d20mm,
+  d25mm,
+  d32mm  
 } parametr;
 enum DIAMETR  {
   d20,
@@ -46,6 +49,10 @@ uint16_t maxTemperature=0;
 #define PIN_GREENLED 7   //PD7 pin for arduino mini 
 #define PIN_SYMYSTOR A0  //PC0  pin for arduino mini 
 #define PIN_BUZ 2         //PD2   pin for arduino mini 
+#define BEEP_ON  digitalWrite(PIN_BUZ, HIGH)
+#define BEEP_OFF  digitalWrite(PIN_BUZ, LOW)
+#define SYMYSTOR_OFF  digitalWrite(PIN_SYMYSTOR, LOW)
+#define SYMYSTOR_ON  digitalWrite(PIN_SYMYSTOR, HIGH)
 //################################ DISPLAY ###############################################
 #define dispHigh 64
 #define dispWidth 128
@@ -66,20 +73,31 @@ double Setpoint, Input, Output;
 #define DEFAULT_KI 5
 PID myPID(&Input, &Output, &Setpoint, DEFAULT_KP, DEFAULT_KI, DEFAULT_KD, DIRECT);
 //################################ MIcroMenu ###############################################
+void m_s1i5EnterFunc(void);			//"START"); /////// Prototype
+// підменю "STOP"
+void m_s1i5sEnterFunc(void);			//"STOP"); /////// Prototype
 // підменю "Вибір труби"
 void m_s2i1EnterFunc(void){			//"20 мм");
-  currentPipeDiametr = pipeDiametr[d20];
+  currentPipeDiametr = d20;
+  parametrToChange=d20mm;  
 }
 void m_s2i2EnterFunc(void){	    //"25 мм");
-  currentPipeDiametr = pipeDiametr[d25];
+  currentPipeDiametr = d25;
+  parametrToChange=d25mm;  
 }		
 void m_s2i3EnterFunc(void){	    //"32 мм");
-  currentPipeDiametr = pipeDiametr[d32];  
+  currentPipeDiametr = d32;
+  parametrToChange=d32mm;      
 }		
 // підменю "Налаштування режимів"
 // підменю "Налаштування коеф"
 void m_s4i2EnterFunc(void){		//"Автопідбір");
-  Setpoint=200;
+  // Setpoint=200;
+  
+  
+  
+  
+  
   
 }
 // підменю "Вивести на дисплей"
@@ -188,10 +206,13 @@ void m_s10i2EnterFunc(void){			//"Зменшити");
 
 // const struct Menu_Item PROGMEM m_s1i1 = {&m_s1i2, &NULL_MENU, &NULL_MENU, &m_s2i1, __null, __null, const char Text[]}
 //                 NEXT,      PREVIOUS     PARENT,     CHILD		     SELECTFUNC			ENTERFUNC		      TEXT
-MENU_ITEM(m_s1i1,  m_s1i2,    NULL_MENU,   NULL_MENU,   m_s2i1,       NULL, 		    NULL,		         "Вибрати трубу");//
+MENU_ITEM(m_s1i1,  m_s1i2,    m_s1i5,      NULL_MENU,   m_s2i1,       NULL, 		    NULL,		         "Вибрати трубу");//
 MENU_ITEM(m_s1i2,  m_s1i3,    m_s1i1,      NULL_MENU,   m_s3i1,       NULL, 		    NULL,		         "Налаштувати режим"); // 
 MENU_ITEM(m_s1i3,  m_s1i4,	  m_s1i2,      NULL_MENU,   m_s4i1,   	  NULL,		    	NULL,		         "Налаштувати коеф");
-MENU_ITEM(m_s1i4,  NULL_MENU, m_s1i3,      NULL_MENU,   m_s5i1,       NULL,		    	NULL,            "Вивести на дисплей");
+MENU_ITEM(m_s1i4,  m_s1i5,    m_s1i3,      NULL_MENU,   m_s5i1,       NULL,		    	NULL,            "Вивести на дисплей");
+MENU_ITEM(m_s1i5,  m_s1i1,    m_s1i4,      NULL_MENU,   NULL_MENU,    NULL,		    	m_s1i5EnterFunc, "-------START-------");
+// підменю "STOP"
+MENU_ITEM(m_s1i5s, NULL_MENU, NULL_MENU,   m_s1i5,      NULL_MENU,    NULL,		    	m_s1i5sEnterFunc, "-------STOP-------");
 // підменю "Вибір труби"
 MENU_ITEM(m_s2i1,  m_s2i2,    m_s2i3,      m_s1i1,     NULL_MENU,     NULL, 		    m_s2i1EnterFunc,  "20 мм");
 MENU_ITEM(m_s2i2,  m_s2i3,    m_s2i1,      m_s1i1,     NULL_MENU,     NULL, 		    m_s2i2EnterFunc,  "25 мм");
@@ -223,6 +244,21 @@ MENU_ITEM(m_s9i3,  m_s9i1,	  m_s9i2,      m_s4i1,     m_s10i1,       NULL, 		   
 MENU_ITEM(m_s10i1, m_s10i2,   m_s10i2,     m_s1i2,     NULL_MENU,     NULL, 		    m_s10i1EnterFunc, "Збільшити");
 MENU_ITEM(m_s10i2, m_s10i1,   m_s10i1,     m_s1i2,     NULL_MENU,     NULL, 		    m_s10i2EnterFunc, "Зменшити");
 
+void m_s1i5EnterFunc(void){			//"START");
+  myPID.SetMode(AUTOMATIC); 
+  dispMode = TEXTMODE;
+  Menu_Navigate(&m_s1i5s);
+  parametrToChange=cur_temp;
+}
+
+void m_s1i5sEnterFunc(void){			//"STOP");
+  myPID.SetMode(MANUAL);
+  SYMYSTOR_OFF;
+  BEEP_OFF;
+  dispMode = TEXTMODE; 
+  parametrToChange=cur_temp;   
+  Menu_Navigate(&m_s1i5); 
+}
 
 static void Generic_Write(const char* menuText) { // Generic function to write the text of a menu.
   char buf[40]={}; 
@@ -288,7 +324,16 @@ static void Generic_Write(const char* menuText) { // Generic function to write t
         break;
       case cur_temp: 
         sprintf(str_temp, "%03d", currentTemperature); 
-        break;       
+        break; 
+      case d20mm: 
+        sprintf(str_temp, "20");
+        break;   
+      case d25mm: 
+        sprintf(str_temp, "25");
+        break; 
+      case d32mm: 
+        sprintf(str_temp, "32");
+        break;              
       default: 
         break;
       }
@@ -358,7 +403,7 @@ void setup() {
   digitalWrite(PIN_SYMYSTOR, LOW); 
   digitalWrite(PIN_REDLED, LOW);   
   digitalWrite(PIN_GREENLED, LOW);
-  digitalWrite(PIN_BUZ, HIGH);
+  BEEP_ON;
   //################################ keyboard ###############################################
   keyInit();
   //################################ serial ###############################################  
@@ -380,52 +425,98 @@ void setup() {
 //################################ PID ###############################################  
   //initialize the variables we're linked to
   myPID.SetOutputLimits(1, 50);
+  myPID.SetSampleTime(1);
   Input = thermocouple.readCelsius();
   Setpoint = 400;
   //turn the PID on
-  myPID.SetMode(AUTOMATIC); 
+  // myPID.SetMode(AUTOMATIC); 
 //################################ MIcroMenu ###############################################
   Menu_SetGenericWriteCallback(Generic_Write);
-  Menu_Navigate(&m_s1i1); 
+  Menu_Navigate(&m_s1i5); 
 
   Serial.println("Setup finished");
   digitalWrite(PIN_REDLED, HIGH);
-  digitalWrite(PIN_BUZ, LOW);
+  BEEP_OFF;
 }
 
 void loop() {
   char str_temp[40];//str_temp[6];
   static uint8_t min;
   static uint8_t sec;
-  static uint32_t previousTime1s=0, previousTime20ms=0, previousTime50ms=0;
+  static uint32_t previousTime1s=0, previousTime20ms=0, previousTime50ms=0, previousTime100ms=0;
   static unsigned char endDataPoint=0; // last save temperature into array data[]
 
   static uint8_t pwmCount=1;
 
-  if ((millis()-previousTime50ms)>=50){// hadle push button
-    previousTime50ms=millis();
-    if (keyScan())
-{      Serial.print("Key pushed = ");    
-      Serial.println( key, BIN); }
+  if ((millis()-previousTime100ms)>=100){// work cycle
+    previousTime100ms=millis();
+    static uint16_t count=0;
+
+    if (myPID.GetMode()==AUTOMATIC){ // if work started
+      count++;       
+      if (count==19){ // start beep 0.5 s
+        BEEP_ON;
+        return;
+      }
+      if (count==25){ // stop beep 0.5 s
+        BEEP_OFF;
+        return;
+      } 
+      if (count==25+pipeDelay[currentPipeDiametr]*10){
+        BEEP_ON;
+        return;           
+      }
+      if (count==25+pipeDelay[currentPipeDiametr]*10+1){
+        BEEP_OFF;
+        return;           
+      } 
+      if (count==25+pipeDelay[currentPipeDiametr]*10+2){
+        BEEP_ON;
+        return;           
+      }
+      if (count==25+pipeDelay[currentPipeDiametr]*10+3){
+        BEEP_OFF;
+        return;           
+      } 
+      if (count==25+pipeDelay[currentPipeDiametr]*10+4){
+        BEEP_ON;
+        return;           
+      }
+      if (count==25+pipeDelay[currentPipeDiametr]*10+5){
+        BEEP_OFF;
+        count=0; // stop working cycle
+        return;           
+      } 
+    }                 
   }
 
-if ((millis()-previousTime20ms)>=20){// hadle PWM symystor
+  if ((millis()-previousTime50ms)>=50){// hadle push button
+    previousTime50ms=millis();
+    if (keyScan()){
+      Serial.print("Key pushed = ");    
+      Serial.println( key, BIN); 
+    }
+  }
+
+  if ((millis()-previousTime20ms)>=20){// hadle PWM symystor
     previousTime20ms=millis();
-////////////////// PWM ////////////////////////    
-    if (pwmCount<=Output) digitalWrite(PIN_SYMYSTOR, HIGH);
-    else digitalWrite(PIN_SYMYSTOR, LOW);
-    pwmCount++; 
-    if (pwmCount==51) pwmCount=0;
+////////////////// PWM ////////////////////////
+    if (myPID.GetMode()==AUTOMATIC)   {
+      if (pwmCount<=Output) digitalWrite(PIN_SYMYSTOR, HIGH);
+      else digitalWrite(PIN_SYMYSTOR, LOW);
+      pwmCount++; 
+      if (pwmCount==51) pwmCount=0;    
+    } 
 ///////////////////////////////////////////////
   }
 
   if ((millis()-previousTime1s)>1000){
     previousTime1s=millis();
 
-    min=millis()/60000;
-    sec=(millis()/1000)%60;
-    sprintf(str_temp, "%02d:%02d", min, sec);
-    Serial.println(str_temp);
+    // min=millis()/60000;
+    // sec=(millis()/1000)%60;
+    // sprintf(str_temp, "%02d:%02d", min, sec);
+    // Serial.println(str_temp);
     // put your main code here, to run repeatedly:
     currentTemperature = thermocouple.readCelsius(); 
 
@@ -438,7 +529,6 @@ if ((millis()-previousTime20ms)>=20){// hadle PWM symystor
       endDataPoint=GRAPHWIDTH-1;
     }
     data[endDataPoint]=currentTemperature;
-
     endDataPoint++;
 
     Input = currentTemperature;
@@ -446,9 +536,7 @@ if ((millis()-previousTime20ms)>=20){// hadle PWM symystor
 
     Generic_Write(Menu_GetCurrentMenu()->Text);
  
-    Serial.print("Temperature=");
-    Serial.println(currentTemperature);  
+    // Serial.print("Temperature=");
+    // Serial.println(currentTemperature);  
   }
-  // delay(1000);
-
 }
