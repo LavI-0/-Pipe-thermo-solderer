@@ -15,7 +15,7 @@
 #endif
 
 // debug
-#define DEBUG
+// #define DEBUG
  
 enum PARAMETR {
   d20Temp,
@@ -46,14 +46,14 @@ uint8_t currentPipeDiametr = d20;
 int16_t currentTemperature=0;
 uint8_t parametrToChange=cur_temp;
 
-bool calibrationStatus=false;
+uint8_t calibrationStatus=0x00;
 #define FINISHED 0x00
 #define START 0x01
 #define OVERLOAD_MEM_ERR 0x02
+#define HEATING_ERR 0x03
 
 uint16_t maxTemperature=0;
 uint16_t minTemperature=0;
-
 
 //################################ GPIO ###############################################
 #define PIN_REDLED 12    //PB4  pin for arduino mini 
@@ -83,6 +83,8 @@ double Setpoint, Input, Output;
 #define DEFAULT_KD 1
 #define DEFAULT_KI 5
 PID myPID(&Input, &Output, &Setpoint, DEFAULT_KP, DEFAULT_KI, DEFAULT_KD, DIRECT);
+//################################ functions prototipes ####################################
+void temperatureManage(void); /////// Prototype
 //################################ MIcroMenu ###############################################
 void m_s1i5EnterFunc(void);			//"START"); /////// Prototype
 // підменю "STOP"
@@ -90,178 +92,69 @@ void m_s1i5sEnterFunc(void);			//"STOP"); /////// Prototype
 // підменю "Вибір труби"
 void m_s2i1EnterFunc(void){			//"20 мм");
   currentPipeDiametr = d20;
-  parametrToChange=d20mm;  
+  parametrToChange=d20mm;
+  dispMode = TEXTMODE;  
 }
 void m_s2i2EnterFunc(void){	    //"25 мм");
   currentPipeDiametr = d25;
-  parametrToChange=d25mm;  
+  parametrToChange=d25mm;
+  dispMode = TEXTMODE;  
 }		
 void m_s2i3EnterFunc(void){	    //"32 мм");
   currentPipeDiametr = d32;
-  parametrToChange=d32mm;      
+  parametrToChange=d32mm;   
+  dispMode = TEXTMODE;   
 }		
 // підменю "Налаштування режимів"
 // підменю "Налаштування коеф"
-void temperatureManage(void); /////// Prototype
-void m_s4i2EnterFunc(void){		//"Автопідбір");
-  int16_t temp[300];
-  uint16_t tempTopIndex = 0;
-  uint32_t time=0, time1s=0;
-  calibrationStatus=START;
-  // PID calculating variables
-  uint16_t t1, t2, t3, tau, tdel;
-  float A, B, B0632, K, r;
-  float kp, ki, kd;
-  //
-  myPID.SetMode(MANUAL);
-  SYMYSTOR_OFF;
-  BEEP_OFF;  
-  // Setpoint=200;
-  
-  // check if its stable heater's temperature
-  while (maxTemperature-minTemperature>3){
-    // while (millis()-time1s<1000) {;}
-    temperatureManage();
-    delay(1000);
-  }
-  #ifdef DEBUG
-    Serial.println("PWM 50%% srarted");
-  #endif
-  // start 50% PWM for 3 sec
-  time1s=millis();
-  for (uint8_t i=0; i<30; i++){ // 30*(50ms+50ms)=3 sec
-    time=millis();
-    SYMYSTOR_ON;
-    while  (millis()-time<50){;}
-    time=millis();
-    SYMYSTOR_OFF;
-    // make temperature measurement each 1 sec   
-    if (millis()-time1s>=1000){ 
-      temperatureManage();  
-      temp[tempTopIndex]=currentTemperature;
-      tempTopIndex++;
-      time1s=millis();
-    }
-    //
-    while  (millis()-time<50){;}
-  }
-  //and continue 50% PWM  until temperature stabilizes
-  while (temp[tempTopIndex]-temp[tempTopIndex-5]>3){
-    time=millis();
-    SYMYSTOR_ON;
-    while  (millis()-time<50){;}
-    time=millis();
-    SYMYSTOR_OFF;
-    // make temperature measurement each 1 sec   
-    if (millis()-time1s>=1000){ 
-      temperatureManage();  
-      temp[tempTopIndex]=currentTemperature;
-      tempTopIndex++;
-      if (tempTopIndex==300){
-        calibrationStatus=OVERLOAD_MEM_ERR;
-        #ifdef DEBUG
-          Serial.println("OVERLOAD_MEM_ERR");
-        #endif
-        return;
-      } 
-      time1s=millis();
-    //
-      while  (millis()-time<50){;}    
-    }   
-  } 
-  // calculate PID(https://pages.mtu.edu/~tbco/cm416/cctune.html)
-  // 1) Under Manual mode, wait until the process is at steady state.
-  // 2) Next, introduce a step change in the input.
-  // 3) Based on the output, obtain an approximate first order process with a time constant t delayed by tDEL units from when the input step was introduced.
-  // The values of t and tDEL can be obtained by first recording the following time instances:
-  // t0	=	time when input step was initiated
-  // t2	=	time when half point occurs
-  // t3	=	time when 63.2% point occurs  
-  // 4) From the measurements based on the step test: t0, t2, t3, A and B, evaluate the following process parameters:
-  // t1 = (t2 - ln(2) t3)/(1 - ln(2))
-  // tau = t3 - t1
-  // tDEL = t1 - t0
-  // K = B/A
-  // 5) Based on the parameters K, t and tDEL, the following formulas prescribe the controller parameters Kc, tI and tD:
-  // r=tdel/tau
-  // Kc=(1/K*r)*(4/3+r/4)
-  // ti=tdel*((32+6*r)/(13+8*r))
-  // td=tdel*(4/(11+2*r))
-
-  A=50;
-  B=currentTemperature;
-  B0632=(float)B*0.632F;
-  for (uint8_t i=0; i<299; i++){
-    if (temp[i]<=(int16_t)(B/2))
-      if (temp[i+1]>=(int16_t)(B/2)) t2=i;    
-    if (temp[i]<=(int16_t)B0632)
-      if (temp[i+1]>=(int16_t)B0632) t3=i;
-  }
-
-  t1 = ((float)t2 - 0.632F*(float)t3)/(1 - 0.632F);
-  tau = t3 - t1;
-  tdel = t1;
-  K=B/A;
-  r=(float)tdel/(float)tau;
-  kp=(1.F/(K*r))*(4.F/3.F+r/4.F);
-  // Ki=Kp/ti
-  ki=kp/(tdel*((32.F+6.F*r)/(13.F+8.F*r)));
-  // Kd=Kp*td 
-  kd=kp*(tdel*(4.F/(11.F+2*r)));
-
-  myPID.SetTunings(kp, ki, kd);
-
-  #ifdef DEBUG
-    Serial.print ("PWM 50%% finished. tempTopIndex=");
-    Serial.println (tempTopIndex);
-    Serial.print (" kp=");
-    Serial.print (kp); 
-    Serial.print (" ki=");
-    Serial.print (ki);
-    Serial.print (" kd=");
-    Serial.println (kd);  
-  #endif
-  //end of calibrations 
-  calibrationStatus=FINISHED;
-}
+void m_s4i2EnterFunc(void);		//"Автопідбір");/////// Prototype
 // підменю "Вивести на дисплей"
-void m_s5i1EnterFunc(void){			//"Стандартно");
+void m_s5i1EnterFunc(void){			//"Число");
   dispMode = TEXTMODE;
 }
-void m_s5i2EnterFunc(void){			//"З графіком");
+void m_s5i2EnterFunc(void){			//"Графік");
   dispMode = GRAFMODE;
   parametrToChange=cur_temp;
 }
 // підпідменю  "Для труби 20 мм"
 void m_s6i1EnterFunc(void){			//"Температура");
   parametrToChange=d20Temp;
+  dispMode = TEXTMODE;
 }
 void m_s6i2EnterFunc(void){			//"Тривалість нагріву");
   parametrToChange=d20Time;
+  dispMode = TEXTMODE;
 }
 // підпідменю  "Для труби 25 мм"
 void m_s7i1EnterFunc(void){			//"Температура");
     parametrToChange=d25Temp;
+    dispMode = TEXTMODE;
 }
 void m_s7i2EnterFunc(void){			//"Тривалість нагріву");
   parametrToChange=d25Time;
+  dispMode = TEXTMODE;
 }
 // підпідменю  "Для труби 23 мм"
 void m_s8i1EnterFunc(void){			//"Температура");
   parametrToChange=d32Temp;
+  dispMode = TEXTMODE;
 }
 void m_s8i2EnterFunc(void){			//"Тривалість нагріву");
   parametrToChange=d32Time;
+  dispMode = TEXTMODE;
 }
 // підпідменю  "Ввести вручну"
 void m_s9i1EnterFunc(void){			//"Kp");
   parametrToChange=KP;
+  dispMode = TEXTMODE;
 }
 void m_s9i2EnterFunc(void){			//"Ki");
   parametrToChange=KI;
+  dispMode = TEXTMODE;
 }
 void m_s9i3EnterFunc(void){			//"Kd");
   parametrToChange=KD;
+  dispMode = TEXTMODE;
 }
 void m_s10i1EnterFunc(void){			//"Збільшити");
   switch (parametrToChange){
@@ -336,7 +229,7 @@ MENU_ITEM(m_s1i3,  m_s1i4,	  m_s1i2,      NULL_MENU,  m_s4i1,   	   NULL,		    	
 MENU_ITEM(m_s1i4,  m_s1i5,    m_s1i3,      NULL_MENU,  m_s5i1,       NULL,		    	NULL,            "Вивести на дисплей");
 MENU_ITEM(m_s1i5,  m_s1i1,    m_s1i4,      NULL_MENU,  m_s1i5s,      NULL,		    	m_s1i5EnterFunc, "-------START-------");
 // підменю "STOP"
-MENU_ITEM(m_s1i5s, NULL_MENU, NULL_MENU,   NULL_MENU,  NULL_MENU,    NULL,		    	m_s1i5sEnterFunc, "-------STOP-------");
+MENU_ITEM(m_s1i5s, NULL_MENU, NULL_MENU,   NULL_MENU,  m_s1i5,        NULL,		      m_s1i5sEnterFunc,"-------STOP--------");
 // підменю "Вибір труби"
 MENU_ITEM(m_s2i1,  m_s2i2,    m_s2i3,      m_s1i1,     NULL_MENU,     NULL, 		    m_s2i1EnterFunc,  "20 мм");
 MENU_ITEM(m_s2i2,  m_s2i3,    m_s2i1,      m_s1i1,     NULL_MENU,     NULL, 		    m_s2i2EnterFunc,  "25 мм");
@@ -349,8 +242,8 @@ MENU_ITEM(m_s3i3,  m_s3i1,	  m_s3i2,      m_s1i2,     m_s8i1,        NULL, 		   
 MENU_ITEM(m_s4i1,  m_s4i2,    m_s4i2,      m_s1i3,     m_s9i1,        NULL,   	    NULL,	            "Ввести вручну");
 MENU_ITEM(m_s4i2,  m_s4i1,	  m_s4i1,      m_s1i3,     NULL_MENU,     NULL,         m_s4i2EnterFunc,	"Автопідбір");
 // підменю "Вивести на дисплей"
-MENU_ITEM(m_s5i1,  m_s5i2,    m_s5i2,      m_s1i4,     NULL_MENU,     NULL,	        m_s5i1EnterFunc,	"Стандартно");
-MENU_ITEM(m_s5i2,  m_s5i1,	  m_s5i1,      m_s1i4,     NULL_MENU,     NULL,	        m_s5i2EnterFunc,	"З графіком");
+MENU_ITEM(m_s5i1,  m_s5i2,    m_s5i2,      m_s1i4,     NULL_MENU,     NULL,	        m_s5i1EnterFunc,	"Число");
+MENU_ITEM(m_s5i2,  m_s5i1,	  m_s5i1,      m_s1i4,     NULL_MENU,     NULL,	        m_s5i2EnterFunc,	"Графік");
 // підпідменю  "Для труби 20 мм"
 MENU_ITEM(m_s6i1,  m_s6i2,    m_s6i2,      m_s3i1,     m_s10i1,       NULL, 		    m_s6i1EnterFunc,  "Температура");
 MENU_ITEM(m_s6i2,  m_s6i1,	  m_s6i1,      m_s3i1,     m_s10i1,       NULL, 		    m_s6i2EnterFunc,  "Тривалість нагріву");
@@ -368,20 +261,16 @@ MENU_ITEM(m_s9i3,  m_s9i1,	  m_s9i2,      m_s4i1,     m_s10i1,       NULL, 		   
 MENU_ITEM(m_s10i1, m_s10i2,   m_s10i2,     m_s1i2,     NULL_MENU,     NULL, 		    m_s10i1EnterFunc, "Збільшити");
 MENU_ITEM(m_s10i2, m_s10i1,   m_s10i1,     m_s1i2,     NULL_MENU,     NULL, 		    m_s10i2EnterFunc, "Зменшити");
 
-void m_s1i5EnterFunc(void){			//"START");
-  myPID.SetMode(AUTOMATIC); 
-  // dispMode = TEXTMODE;
-  Menu_Navigate(&m_s1i5s);
-  parametrToChange=cur_temp;
-}
-void m_s1i5sEnterFunc(void){			//"STOP");
-  myPID.SetMode(MANUAL);
-  SYMYSTOR_OFF;
-  BEEP_OFF;
-  parametrToChange=cur_temp;   
-  Menu_Navigate(&m_s1i5); 
-}
-
+static void Generic_Write(const char* menuText); /////// Prototype // Generic function to write the text of a menu 
+//################################ MAX6675 ###############################################
+#define PIN_MAX6675_SO A3
+#define PIN_MAX6675_CS A2
+#define PIN_MAX6675_SCK A1
+MAX6675 thermocouple(PIN_MAX6675_SCK, PIN_MAX6675_CS, PIN_MAX6675_SO);
+// make a cute degree symbol
+// uint8_t degree[8]  = {140,146,146,140,128,128,128,128};
+#define MAXTEMPERATURE 50
+//#########################################################################################
 static void Generic_Write(const char* menuText) { // Generic function to write the text of a menu.
   char buf[40]={};  // two bytes for each UTF8 char
   char str_temp[5]={};
@@ -472,7 +361,7 @@ static void Generic_Write(const char* menuText) { // Generic function to write t
       u8g2->drawUTF8(0, 34, buf);
       sprintf(buf, "  Це може зайняти  ");
       u8g2->drawUTF8(0,43, buf);
-      sprintf(buf, "      до 10 хв     ");
+      sprintf(buf, "      до 5 хв     ");
       u8g2->drawUTF8(0,52, buf);   
       sprintf(buf, "Не робіть нічого!!!");
       u8g2->drawUTF8(0, 61, buf);
@@ -480,15 +369,6 @@ static void Generic_Write(const char* menuText) { // Generic function to write t
   } while (u8g2->nextPage());// C++
   // } while (u8g2_nextPage(&u8g2));// C
 }
-//################################ MAX6675 ###############################################
-#define PIN_MAX6675_SO A3
-#define PIN_MAX6675_CS A2
-#define PIN_MAX6675_SCK A1
-MAX6675 thermocouple(PIN_MAX6675_SCK, PIN_MAX6675_CS, PIN_MAX6675_SO);
-// make a cute degree symbol
-// uint8_t degree[8]  = {140,146,146,140,128,128,128,128};
-#define MAXTEMPERATURE 50
-//#########################################################################################
 void temperatureManage (void){
   static unsigned char endDataPoint=0; // last save temperature into array data[]
   
@@ -543,6 +423,160 @@ void graph (uint16_t* arrDot120, uint16_t maxTemperInInterval, uint8_t xStart, u
     // u8g2_drawPixel(&u8g2, xStart+i, yStart-arrDot120[i]/scaleY); //C
   }
 }
+void m_s1i5EnterFunc(void){			//"START");
+  myPID.SetMode(AUTOMATIC); 
+  // dispMode = TEXTMODE;
+  // Menu_Navigate(&m_s1i5s);
+  parametrToChange=cur_temp;
+}
+void m_s1i5sEnterFunc(void){			//"STOP");
+  myPID.SetMode(MANUAL);
+  SYMYSTOR_OFF;
+  BEEP_OFF;
+  // Menu_Navigate(&m_s1i5); 
+  parametrToChange=cur_temp;   
+}
+void m_s4i2EnterFunc(void){		//"Автопідбір"
+  int16_t temp[300];
+  uint16_t tempTopIndex = 0;
+  uint32_t time=0, time1s=0;
+  calibrationStatus=START;
+  Menu_Navigate(Menu_GetCurrentMenu()); // show warning text on display
+
+  // PID calculating variables
+  uint16_t t1, t2, t3, tau, tdel;
+  float A, B, B0632, K, r;
+  float kp, ki, kd;
+  //
+  myPID.SetMode(MANUAL);
+  SYMYSTOR_OFF;
+  BEEP_OFF;  
+  // Setpoint=200;
+  
+  // check if its stable heater's temperature
+  while (maxTemperature-minTemperature>3){
+    // while (millis()-time1s<1000) {;}
+    temperatureManage();
+    delay(1000);
+  }
+  #ifdef DEBUG
+    Serial.println("PWM 50%% srarted");
+  #endif
+  // start 50% PWM for 5 sec
+  time1s=millis();
+  for (uint8_t i=0; i<50; i++){ // 50*(50ms+50ms)=5 sec
+    time=millis();
+    SYMYSTOR_ON;
+    while  (millis()-time<50){;}
+    time=millis();
+    SYMYSTOR_OFF;
+    // make temperature measurement each 1 sec   
+    if (millis()-time1s>=1000){ 
+      // temperatureManage();  
+      temp[tempTopIndex]=thermocouple.readCelsius();
+      #ifdef DEBUG
+        Serial.print(tempTopIndex);
+        Serial.print("-");
+        Serial.println(temp[tempTopIndex]);
+      #endif
+      tempTopIndex++;
+      time1s=millis();
+    }
+    //
+    while  (millis()-time<50){;}
+  }
+  if (temp[tempTopIndex-1]-temp[tempTopIndex-4]<5){// something went wrong and temperature dont rise up
+    calibrationStatus=HEATING_ERR;
+    #ifdef DEBUG
+      Serial.println("HEATING_ERR");
+    #endif
+    return;
+  }
+  //and continue 50% PWM  until temperature stabilizes
+  while (temp[tempTopIndex]-temp[tempTopIndex-5]>3){
+    time=millis();
+    SYMYSTOR_ON;
+    while  (millis()-time<50){;}
+    time=millis();
+    SYMYSTOR_OFF;
+    // make temperature measurement each 1 sec   
+    if (millis()-time1s>=1000){ 
+      // temperatureManage();  
+      temp[tempTopIndex]=thermocouple.readCelsius();
+      #ifdef DEBUG
+        Serial.print(tempTopIndex);
+        Serial.print("-");
+        Serial.println(temp[tempTopIndex]);
+      #endif
+      tempTopIndex++;
+      if (tempTopIndex==300){
+        calibrationStatus=OVERLOAD_MEM_ERR;
+        #ifdef DEBUG
+          Serial.println("OVERLOAD_MEM_ERR");
+        #endif
+        return;
+      } 
+      time1s=millis();
+    //  
+    }
+    while  (millis()-time<50){;}     
+  } 
+
+  // calculate PID(https://pages.mtu.edu/~tbco/cm416/cctune.html)
+  // 1) Under Manual mode, wait until the process is at steady state.
+  // 2) Next, introduce a step change in the input.
+  // 3) Based on the output, obtain an approximate first order process with a time constant t delayed by tDEL units from when the input step was introduced.
+  // The values of t and tDEL can be obtained by first recording the following time instances:
+  // t0	=	time when input step was initiated
+  // t2	=	time when half point occurs
+  // t3	=	time when 63.2% point occurs  
+  // 4) From the measurements based on the step test: t0, t2, t3, A and B, evaluate the following process parameters:
+  // t1 = (t2 - ln(2) t3)/(1 - ln(2))
+  // tau = t3 - t1
+  // tDEL = t1 - t0
+  // K = B/A
+  // 5) Based on the parameters K, t and tDEL, the following formulas prescribe the controller parameters Kc, tI and tD:
+  // r=tdel/tau
+  // Kc=(1/K*r)*(4/3+r/4)
+  // ti=tdel*((32+6*r)/(13+8*r))
+  // td=tdel*(4/(11+2*r))
+
+  A=50;
+  B=currentTemperature;
+  B0632=(float)B*0.632F;
+  for (uint8_t i=0; i<299; i++){
+    if (temp[i]<=(int16_t)(B/2))
+      if (temp[i+1]>=(int16_t)(B/2)) t2=i;    
+    if (temp[i]<=(int16_t)B0632)
+      if (temp[i+1]>=(int16_t)B0632) t3=i;
+  }
+
+  t1 = ((float)t2 - 0.632F*(float)t3)/(1 - 0.632F);
+  tau = t3 - t1;
+  tdel = t1;
+  K=B/A;
+  r=(float)tdel/(float)tau;
+  kp=(1.F/(K*r))*(4.F/3.F+r/4.F);
+  // Ki=Kp/ti
+  ki=kp/(tdel*((32.F+6.F*r)/(13.F+8.F*r)));
+  // Kd=Kp*td 
+  kd=kp*(tdel*(4.F/(11.F+2*r)));
+
+  myPID.SetTunings(kp, ki, kd);
+
+  #ifdef DEBUG
+    Serial.print ("PWM 50%% finished. tempTopIndex=");
+    Serial.println (tempTopIndex);
+    Serial.print (" kp=");
+    Serial.print (kp); 
+    Serial.print (" ki=");
+    Serial.print (ki);
+    Serial.print (" kd=");
+    Serial.println (kd);  
+  #endif
+  //end of calibrations 
+  calibrationStatus=FINISHED;
+}
 void setup() {
 //################################ GPIO ###############################################
   pinMode(PIN_REDLED, OUTPUT);
@@ -557,7 +591,7 @@ void setup() {
   keyInit();
   //################################ serial ###############################################  
   #ifdef DEBUG
-    Serial.begin(9600);
+    Serial.begin(115200); // Serial.begin(9600);
     Serial.println("Setup start");    
   #endif
 //################################ MAX6675 ###############################################
@@ -658,20 +692,20 @@ void loop() {
     }
   }
 
-  if ((millis()-previousTime20ms)>=20){// hadle PWM symystor
+  if ((millis()-previousTime20ms)>=100){// hadle PWM symystor
     previousTime20ms=millis();
 ////////////////// PWM ////////////////////////
     if (myPID.GetMode()==AUTOMATIC)   {
       if (pwmCount<=Output){
         digitalWrite(PIN_SYMYSTOR, HIGH);
         #ifdef DEBUG
-          Serial.println("H");
+          Serial.print("H");
         #endif
       } 
       else{
         digitalWrite(PIN_SYMYSTOR, LOW);
         #ifdef DEBUG
-          Serial.println("L");
+          Serial.print("L");
         #endif
       } 
       pwmCount++; 
